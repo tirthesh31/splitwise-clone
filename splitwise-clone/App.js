@@ -4,6 +4,7 @@ import Login from './screens/Auth/Login'
 import SignUp from './screens/Auth/SignUp'
 import Starter from './screens/Starter/Starter';
 import Home from './screens/Home'
+import GroupDetails from './screens/GroupDetails';
 const Stack = createStackNavigator();
 const App = () => {
   return (
@@ -13,6 +14,7 @@ const App = () => {
         <Stack.Screen name="Login" component={Login} options={{ headerShown: false }}  />
         <Stack.Screen name="SignUp" component={SignUp} options={{ headerShown: false }} />
         <Stack.Screen name="Home" component={Home} options={{ headerShown: false }} />
+        <Stack.Screen name="GroupDetails" component={GroupDetails} options={{ headerShown: false }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

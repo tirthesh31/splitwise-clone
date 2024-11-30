@@ -33,7 +33,7 @@ const SignUp = ({ navigation }) => {
 
     try {
       await createUserWithEmailAndPassword(auth, email, password);
-      navigation.navigate('Home');
+      navigation.navigate('Home',{email});
     } catch (error) {
       Alert.alert('Error', error.message);
     }
