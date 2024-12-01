@@ -9,7 +9,7 @@ import Colors from '../utils/Colors';
 const Tab = createBottomTabNavigator();
 
 const Home = ({ route }) => {
-  const { email } = route.params;
+  const { userId } = route.params;
 
   return (
     <Tab.Navigator
@@ -28,6 +28,7 @@ const Home = ({ route }) => {
             <Icon name="group" color={color} size={30} />
           ),
         }}
+        initialParams={{userId:userId}}
       />
       <Tab.Screen
         name="Profile"
@@ -37,6 +38,7 @@ const Home = ({ route }) => {
             <Icon name="person" color={color} size={size} />
           ),
         }}
+        initialParams={{userId:userId}}
       />
       <Tab.Screen
         name="Notification"
@@ -46,6 +48,7 @@ const Home = ({ route }) => {
             <Icon name="notifications" color={color} size={size} />
           ),
         }}
+        initialParams={{userId:userId}}
       />
     </Tab.Navigator>
   );

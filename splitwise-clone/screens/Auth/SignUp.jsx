@@ -11,17 +11,20 @@ import {
   Platform,
   ScrollView 
 } from 'react-native';
-import { auth } from '../../utils/firebase';
+import { auth,database } from '../../utils/firebase';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import Colors from '../../utils/Colors';
+import { ref, set } from 'firebase/database'; // For Realtime Database
 
 const SignUp = ({ navigation }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
   const handleSignUp = async () => {
-    if (!email || !password || !confirmPassword) {
+    if (!email || !password || !confirmPassword || !firstName || !lastName) {
       Alert.alert('Error', 'Please enter all fields.');
       return;
     }
@@ -32,8 +35,15 @@ const SignUp = ({ navigation }) => {
     }
 
     try {
+      const userId = email.replace(/\./g, '_'); // Replace '.' in email for valid Firebase keys
+      await set(ref(database, `users/${userId}`), {
+        firstName,
+        lastName,
+        email,
+        createdAt: new Date().toISOString(),
+      });
       await createUserWithEmailAndPassword(auth, email, password);
-      navigation.navigate('Home',{email});
+      navigation.navigate('Home',{userId});
     } catch (error) {
       Alert.alert('Error', error.message);
     }
@@ -58,6 +68,24 @@ const SignUp = ({ navigation }) => {
         <Text style={styles.subtitle}>Sign up to get started</Text>
         
         <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.input}
+            placeholder="First Name"
+            placeholderTextColor={Colors.textPrimary}
+            value={firstName}
+            onChangeText={setFirstName}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Last Name"
+            placeholderTextColor={Colors.textPrimary}
+            value={lastName}
+            onChangeText={setLastName}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
           <TextInput
             style={styles.input}
             placeholder="Email Address"

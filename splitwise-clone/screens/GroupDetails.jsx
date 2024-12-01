@@ -1,54 +1,188 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
-  StyleSheet, 
   TouchableOpacity, 
   FlatList, 
   Modal, 
   TextInput, 
-  ScrollView 
+  ScrollView,
+  Alert 
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import styles from '../styles/GroupsDetail';
+import { getDatabase, ref, push, set, onValue, update,get } from 'firebase/database';
+import { getAuth } from 'firebase/auth';
+import Colors from "../utils/Colors";
 
 const GroupDetails = ({ route, navigation }) => {
-  const { groupId, groupName } = route.params;
+  const { group,userId } = route.params;
+  const auth = getAuth();
+  const db = getDatabase();
 
-  const [expenses, setExpenses] = useState([
-    {
-      id: '1',
-      description: 'Groceries',
-      amount: 1200,
-      paidBy: 'You',
-      date: '2024-02-15'
-    },
-    {
-      id: '2',
-      description: 'Dinner',
-      amount: 800,
-      paidBy: 'Rohan',
-      date: '2024-02-10'
-    }
-  ]);
-
-  const [members, setMembers] = useState([
-    { id: '1', name: 'You', totalPaid: 1200, totalOwed: 600 },
-    { id: '2', name: 'Rohan', totalPaid: 800, totalOwed: 1200 },
-    { id: '3', name: 'Sarah', totalPaid: 500, totalOwed: 400 }
-  ]);
-
+  // State for expenses and members
+  const [expenses, setExpenses] = useState([]);
+  const [members, setMembers] = useState([]);
+  const [updatedMembers, setUpdatedMembers] = useState([]);
+  // Modal states
   const [isAddExpenseModalVisible, setAddExpenseModalVisible] = useState(false);
+  const [isAddMemberModalVisible, setAddMemberModalVisible] = useState(false);
+  
+  // New expense and member states
   const [newExpense, setNewExpense] = useState({
     description: '',
     amount: '',
-    paidBy: 'You'
+    paidBy: auth.currentUser.displayName || 'You'
+  });
+  const [newMember, setNewMember] = useState({
+    email: ''
   });
 
+  // Fetch group data on component mount
+  useEffect(() => {
+    const groupRef = ref(db, `Groups/${group.id}`);
+    setUpdatedMembers(group.members);
+    // Listen for expenses changes
+    const expensesRef = ref(db, `Groups/${group.id}/expenses`);
+    const unsubscribeExpenses = onValue(expensesRef, (snapshot) => {
+      const expensesData = snapshot.val();
+      const loadedExpenses = expensesData 
+        ? Object.keys(expensesData).map(key => ({
+            id: key,
+            ...expensesData[key]
+          })) 
+        : [];
+      setExpenses(loadedExpenses);
+    });
+
+    // Listen for members changes
+    const membersRef = ref(db, `Groups/${group.id}/members`);
+    const unsubscribeMembers = onValue(membersRef, async (snapshot) => {
+      const membersData = snapshot.val();
+      if (membersData) {
+        const loadedMembers = [];
+        for (const memberKey in membersData) {
+          
+          const memberRef = ref(db, `users/${membersData[memberKey].id}`);
+          try {
+            const memberSnapshot = await get(memberRef);
+            if (memberSnapshot.exists()) {
+              loadedMembers.push({
+                ...memberSnapshot.val(),
+                id: membersData[memberKey].id
+              });
+            }
+          } catch (error) {
+            console.error("Error fetching member details:", error);
+          }
+        }
+        
+        setMembers(loadedMembers);
+        setUpdatedMembers(loadedMembers)
+      }
+    });
+
+    // Cleanup subscriptions
+    return () => {
+      unsubscribeExpenses();
+      unsubscribeMembers();
+    };
+  }, [group.id]);
+
+  // Calculate total expense
   const calculateTotalExpense = () => {
-    return expenses.reduce((total, expense) => total + expense.amount, 0);
+    return expenses.reduce((total, expense) => total + parseFloat(expense.amount || 0), 0);
   };
 
+  
+  
+    const addNewExpense = () => {
+      if (!newExpense.description || !newExpense.amount) {
+        Alert.alert('Invalid Input', 'Please fill in all fields');
+        return;
+      }
+    
+      const expensesRef = ref(db, `Groups/${group.id}/expenses`);
+      const newExpenseRef = push(expensesRef);
+      const amount = parseFloat(newExpense.amount);
+      
+    
+      // Create a transaction to update group members and expenses
+      const groupMembersRef = ref(db, `Groups/${group.id}/members`);
+      const updates = {};
+
+      const numberOfMembers = updatedMembers.length;
+      const splitAmount = amount / numberOfMembers;
+      updatedMembers.forEach((member, index) => {
+        // Update the paid amount for the user who paid the expense
+        if (member.id === userId) {
+          updates[`${member.id}/paid`] = (member.paid || 0) + amount;
+        }
+    
+        // Calculate how much each member owes
+        updatedMembers.forEach((otherMember) => {
+          if (otherMember.id !== member.id) {
+            const owesKey = `${member.id}_owes_${otherMember.id}`;
+            
+            if (member.id === userId) {
+              // The person who paid reduces their owed amount to others
+              updates[`${member.id}/${owesKey}`] = 
+                ((member[owesKey] || 0) - splitAmount).toFixed(2);
+            } else {
+              // Other members increase their owed amount to the person who paid
+              if(otherMember.id === userId){
+                updates[`${member.id}/${owesKey}`] = 
+                ((member[owesKey] || 0) + splitAmount).toFixed(2);
+              }
+            }
+          }
+        });
+      });
+    
+      // Add the new expense
+      set(newExpenseRef, {
+        description: newExpense.description,
+        amount: amount,
+        paidBy: newExpense.paidBy,
+        date: new Date().toISOString().split('T')[0],
+        addedBy: userId
+      }).then(() => {
+        // Update members with the calculated balances
+        update(groupMembersRef, updates)
+          .then(() => {
+            setNewExpense({ description: '', amount: '', paidBy: auth.currentUser.displayName || 'You' });
+            setAddExpenseModalVisible(false);
+          })
+          .catch((error) => {
+            Alert.alert('Error', 'Failed to update member balances: ' + error.message);
+          });
+      }).catch((error) => {
+        Alert.alert('Error', 'Failed to add expense: ' + error.message);
+      });
+    };
+  
+
+  // Add new member
+  const addNewMember = () => {
+    if (!newMember.email) {
+      Alert.alert('Invalid Input', 'Please fill in all fields');
+      return;
+    }
+    const newUserId = newMember.email.replace(/\./g, '_');
+    const membersRef = ref(db, `Groups/${group.id}/members/${newUserId}`);
+    
+    
+    set(membersRef, {
+      id: newUserId,
+      addedBy: userId
+    }).then(() => {
+      setAddMemberModalVisible(false);
+    }).catch((error) => {
+      Alert.alert('Error', 'Failed to add member: ' + error.message);
+    });
+  };
+
+  // Function to render expense item
   const renderExpenseItem = ({ item }) => (
     <View style={styles.expenseItem}>
       <View style={styles.expenseIconContainer}>
@@ -67,10 +201,11 @@ const GroupDetails = ({ route, navigation }) => {
           Paid by {item.paidBy} on {item.date}
         </Text>
       </View>
-      <Text style={styles.expenseAmount}>₹{item.amount.toLocaleString()}</Text>
+      <Text style={styles.expenseAmount}>₹{item.amount? item.amount.toLocaleString() : '0'}</Text>
     </View>
   );
 
+  // Function to render member item
   const renderMemberItem = ({ item }) => {
     const isInProfit = item.totalPaid > item.totalOwed;
     const balanceColor = isInProfit ? '#48CFAD' : '#ED5565';
@@ -86,13 +221,13 @@ const GroupDetails = ({ route, navigation }) => {
           />
         </View>
         <View style={styles.memberDetails}>
-          <Text style={styles.memberName}>{item.name}</Text>
+          <Text style={styles.memberName}>{item.firstName} {item.lastName}</Text>
           <View style={styles.memberBalanceContainer}>
             <Text style={[styles.memberPaid, { color: '#48CFAD' }]}>
-              Paid: ₹{item.totalPaid.toLocaleString()}
+              Paid: ₹{item.totalPaid? item.totalPaid.toLocaleString() : '0'}
             </Text>
             <Text style={[styles.memberOwed, { color: '#ED5565' }]}>
-              Owes: ₹{item.totalOwed.toLocaleString()}
+              Owes: ₹{item.totalOwed?item.totalOwed.toLocaleString():'0'}
             </Text>
           </View>
         </View>
@@ -107,21 +242,6 @@ const GroupDetails = ({ route, navigation }) => {
     );
   };
 
-  const addNewExpense = () => {
-    if (newExpense.description && newExpense.amount) {
-      const expense = {
-        id: String(expenses.length + 1),
-        description: newExpense.description,
-        amount: parseFloat(newExpense.amount),
-        paidBy: newExpense.paidBy,
-        date: new Date().toISOString().split('T')[0]
-      };
-      setExpenses([...expenses, expense]);
-      setNewExpense({ description: '', amount: '', paidBy: 'You' });
-      setAddExpenseModalVisible(false);
-    }
-  };
-
   return (
     <View style={styles.container}>
       {/* Header */}
@@ -130,15 +250,21 @@ const GroupDetails = ({ route, navigation }) => {
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <Icon name="arrow-back" size={24} color="#333" />
+          <Icon name="arrow-back" size={30} color={Colors.white} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{groupName}</Text>
-        <TouchableOpacity 
-          onPress={() => setAddExpenseModalVisible(true)}
-          style={styles.addButton}
-        >
-          <Icon name="add-circle" size={24} color="#333" />
-        </TouchableOpacity>
+        <Text style={styles.headerTitle}>{group.name}</Text>
+        <View style={styles.headerIconContainer}>
+          <TouchableOpacity 
+            onPress={() => setAddMemberModalVisible(true)}
+          >
+            <Icon name="person-add" size={30} color={Colors.white} />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            onPress={() => setAddExpenseModalVisible(true)}
+          >
+            <Icon name="add-circle" size={30} color={Colors.white} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Total Expense Summary */}
@@ -146,17 +272,16 @@ const GroupDetails = ({ route, navigation }) => {
         <View style={styles.summaryCard}>
           <Text style={styles.summaryTitle}>Total Expense</Text>
           <Text style={styles.summaryAmount}>
-            ₹{calculateTotalExpense().toLocaleString()}
+            ₹{calculateTotalExpense() ? calculateTotalExpense().toLocaleString() : '0'}
           </Text>
         </View>
       </View>
 
-      {/* Scrollable Content */}
+      
       <ScrollView 
         contentContainerStyle={styles.scrollContainer}
         showsVerticalScrollIndicator={false}
       >
-        {/* Expenses List */}
         <View style={styles.sectionContainer}>
           <Text style={styles.sectionTitle}>Expenses</Text>
           <FlatList
@@ -179,7 +304,43 @@ const GroupDetails = ({ route, navigation }) => {
         </View>
       </ScrollView>
 
-      {/* Add Expense Modal */}
+      {/* Add Member Modal */}
+      <Modal
+        visible={isAddMemberModalVisible}
+        transparent={true}
+        animationType="slide"
+        statusBarTranslucent
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <Text style={styles.modalTitle}>Add New Member</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Member Email"
+              placeholderTextColor="#8E8E93"
+              keyboardType="email-address"
+              value={newMember.email}
+              onChangeText={(text) => setNewMember({...newMember, email: text})}
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity 
+                style={[styles.modalButton, styles.cancelButton]} 
+                onPress={() => setAddMemberModalVisible(false)}
+              >
+                <Text style={styles.modalButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.modalButton, styles.addButton]} 
+                onPress={addNewMember}
+              >
+                <Text style={[styles.modalButtonText, { color: 'white' }]}>Add Member</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Add Expense Modal (modified from previous implementation) */}
       <Modal
         visible={isAddExpenseModalVisible}
         transparent={true}

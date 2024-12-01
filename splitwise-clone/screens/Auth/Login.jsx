@@ -24,14 +24,19 @@ const Login = ({ navigation }) => {
       Alert.alert('Error', 'Please enter both email and password.');
       return;
     }
-
+  
     try {
+      // Authenticate user
       await signInWithEmailAndPassword(auth, email, password);
-      navigation.navigate('Home',{email});
+      const userId = email.replace(/\./g, '_'); // Replace '.' in email for valid Firebase keys
+      // Navigate to Home with email and userId
+      navigation.navigate('Home', { email, userId });
+      
     } catch (error) {
       Alert.alert('Error', error.message);
     }
   };
+  
 
   return (
     <KeyboardAvoidingView 

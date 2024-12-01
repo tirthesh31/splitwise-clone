@@ -1,4 +1,5 @@
 import { StyleSheet } from "react-native";
+import Colors from "../utils/Colors";
 
 const styles = StyleSheet.create({
   container: {
@@ -12,7 +13,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 50,
     paddingBottom: 20,
-    backgroundColor: 'white',
+    backgroundColor: Colors.primary,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -22,13 +23,16 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#333',
+    color: Colors.white,
   },
   backButton: {
     padding: 10,
   },
-  addButton: {
-    padding: 10,
+  headerIconContainer:{
+    display:'flex',
+    flexDirection:'row',
+    width:80,
+    justifyContent:'space-between'
   },
   summaryContainer: {
     paddingHorizontal: 20,
