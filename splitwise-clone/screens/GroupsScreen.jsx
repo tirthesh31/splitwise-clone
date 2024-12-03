@@ -87,7 +87,7 @@ const GroupsScreen = ({ navigation,route }) => {
             {item.name}
           </Text>
           <Text style={styles.groupSubtitle}>
-            
+            {item.createdBy}
           </Text>
         </View>
         <Icon name="chevron-right" size={24} color="#8E8E93" />

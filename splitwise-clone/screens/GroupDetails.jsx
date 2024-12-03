@@ -57,19 +57,36 @@ const GroupDetails = ({ route, navigation }) => {
 
     // Listen for members changes
     const membersRef = ref(db, `Groups/${group.id}/members`);
+    // Modify the members fetching in useEffect
     const unsubscribeMembers = onValue(membersRef, async (snapshot) => {
       const membersData = snapshot.val();
       if (membersData) {
         const loadedMembers = [];
         for (const memberKey in membersData) {
-          
           const memberRef = ref(db, `users/${membersData[memberKey].id}`);
           try {
             const memberSnapshot = await get(memberRef);
             if (memberSnapshot.exists()) {
+              const memberData = memberSnapshot.val();
+              
+              // Calculate total paid
+              
+              const totalPaid = membersData[memberData?.email.replace(/\./g, '_')]?.paid || 0;
+              
+              // Calculate total owed to others
+              let totalOwed = 0;
+              for (const otherMemberKey in membersData) {
+                if (otherMemberKey !== memberKey) {
+                  const owesKey = `${memberKey}_owes_${otherMemberKey}`;
+                  totalOwed += Math.abs(parseFloat(membersData[memberKey][owesKey] || 0));
+                }
+              }
+
               loadedMembers.push({
-                ...memberSnapshot.val(),
-                id: membersData[memberKey].id
+                ...memberData,
+                id: membersData[memberKey].id,
+                totalPaid,
+                totalOwed
               });
             }
           } catch (error) {
@@ -78,7 +95,7 @@ const GroupDetails = ({ route, navigation }) => {
         }
         
         setMembers(loadedMembers);
-        setUpdatedMembers(loadedMembers)
+        setUpdatedMembers(loadedMembers);
       }
     });
 
@@ -96,70 +113,75 @@ const GroupDetails = ({ route, navigation }) => {
 
   
   
-    const addNewExpense = () => {
-      if (!newExpense.description || !newExpense.amount) {
-        Alert.alert('Invalid Input', 'Please fill in all fields');
-        return;
+  const addNewExpense = () => {
+    if (!newExpense.description || !newExpense.amount) {
+      Alert.alert('Invalid Input', 'Please fill in all fields');
+      return;
+    }
+  
+    const expensesRef = ref(db, `Groups/${group.id}/expenses`);
+    const newExpenseRef = push(expensesRef);
+    const amount = parseFloat(newExpense.amount);
+  
+    const groupMembersRef = ref(db, `Groups/${group.id}/members`);
+    const updates = {};
+  
+    const numberOfMembers = updatedMembers.length;
+    const splitAmount = amount / numberOfMembers;
+    console.log(JSON.stringify(updatedMembers));
+    
+    updatedMembers.forEach((member) => {
+      // Update the paid amount for the user who paid the expense
+      if (member.id === userId) {
+        // Use update to increment the paid amount
+        updates[`${member.id}/paid`] = (member.totalPaid || 0) + amount;
       }
-    
-      const expensesRef = ref(db, `Groups/${group.id}/expenses`);
-      const newExpenseRef = push(expensesRef);
-      const amount = parseFloat(newExpense.amount);
-      
-    
-      // Create a transaction to update group members and expenses
-      const groupMembersRef = ref(db, `Groups/${group.id}/members`);
-      const updates = {};
-
-      const numberOfMembers = updatedMembers.length;
-      const splitAmount = amount / numberOfMembers;
-      updatedMembers.forEach((member, index) => {
-        // Update the paid amount for the user who paid the expense
-        if (member.id === userId) {
-          updates[`${member.id}/paid`] = (member.paid || 0) + amount;
-        }
-    
-        // Calculate how much each member owes
-        updatedMembers.forEach((otherMember) => {
-          if (otherMember.id !== member.id) {
-            const owesKey = `${member.id}_owes_${otherMember.id}`;
-            
-            if (member.id === userId) {
-              // The person who paid reduces their owed amount to others
+  
+      // Calculate how much each member owes
+      updatedMembers.forEach((otherMember) => {
+        if (otherMember.id !== member.id) {
+          const owesKey = `${member.id}_owes_${otherMember.id}`;
+          
+          if (member.id === userId) {
+            // The person who paid reduces their owed amount to others
+            // Use update to modify the existing value
+            updates[`${member.id}/${owesKey}`] = 
+              ((member.totalOwed || 0) - splitAmount).toFixed(2);
+          } else {
+            // Other members increase their owed amount to the person who paid
+            if(otherMember.id === userId){
+              // Use update to modify the existing value
               updates[`${member.id}/${owesKey}`] = 
-                ((member[owesKey] || 0) - splitAmount).toFixed(2);
-            } else {
-              // Other members increase their owed amount to the person who paid
-              if(otherMember.id === userId){
-                updates[`${member.id}/${owesKey}`] = 
-                ((member[owesKey] || 0) + splitAmount).toFixed(2);
-              }
+                ((member.totalOwed || 0) + splitAmount).toFixed(2);
             }
           }
-        });
+        }
       });
-    
-      // Add the new expense
-      set(newExpenseRef, {
-        description: newExpense.description,
-        amount: amount,
-        paidBy: newExpense.paidBy,
-        date: new Date().toISOString().split('T')[0],
-        addedBy: userId
-      }).then(() => {
-        // Update members with the calculated balances
-        update(groupMembersRef, updates)
-          .then(() => {
-            setNewExpense({ description: '', amount: '', paidBy: auth.currentUser.displayName || 'You' });
-            setAddExpenseModalVisible(false);
-          })
-          .catch((error) => {
-            Alert.alert('Error', 'Failed to update member balances: ' + error.message);
-          });
-      }).catch((error) => {
-        Alert.alert('Error', 'Failed to add expense: ' + error.message);
-      });
+    });
+  
+    // Add the new expense
+    const expenseData = {
+      description: newExpense.description,
+      amount: amount,
+      paidBy: newExpense.paidBy,
+      date: new Date().toISOString().split('T')[0],
+      addedBy: userId
     };
+  
+    // Use push to create a new expense entry
+    push(expensesRef, expenseData)
+      .then(() => {
+        // Update members with the calculated balances
+        return update(groupMembersRef, updates);
+      })
+      .then(() => {
+        setNewExpense({ description: '', amount: '', paidBy: auth.currentUser.displayName || 'You' });
+        setAddExpenseModalVisible(false);
+      })
+      .catch((error) => {
+        Alert.alert('Error', 'Failed to add expense or update member balances: ' + error.message);
+      });
+  };
   
 
   // Add new member
@@ -209,7 +231,7 @@ const GroupDetails = ({ route, navigation }) => {
   const renderMemberItem = ({ item }) => {
     const isInProfit = item.totalPaid > item.totalOwed;
     const balanceColor = isInProfit ? '#48CFAD' : '#ED5565';
-
+  
     return (
       <View style={styles.memberItem}>
         <View style={styles.memberIconContainer}>
@@ -224,12 +246,21 @@ const GroupDetails = ({ route, navigation }) => {
           <Text style={styles.memberName}>{item.firstName} {item.lastName}</Text>
           <View style={styles.memberBalanceContainer}>
             <Text style={[styles.memberPaid, { color: '#48CFAD' }]}>
-              Paid: ₹{item.totalPaid? item.totalPaid.toLocaleString() : '0'}
+              Paid: ₹{(item.totalPaid || 0).toLocaleString()}
             </Text>
             <Text style={[styles.memberOwed, { color: '#ED5565' }]}>
-              Owes: ₹{item.totalOwed?item.totalOwed.toLocaleString():'0'}
+              Owes: ₹{(item.totalOwed || 0).toLocaleString()}
             </Text>
           </View>
+          {isInProfit ? (
+            <Text style={[styles.memberPaid, { color: '#48CFAD' }]}>
+              Will receive: ₹{(((item.totalPaid - item.totalOwed)/members.length)*(members.length - 1)).toLocaleString()}
+            </Text>
+          ) : (
+            <Text style={[styles.memberOwed, { color: '#ED5565' }]}>
+              Needs to pay: ₹{(item.totalOwed - item.totalPaid).toLocaleString()}
+            </Text>
+          )}
         </View>
         <View style={[styles.memberBalanceStatus, { backgroundColor: balanceColor + '20' }]}>
           <Icon 
