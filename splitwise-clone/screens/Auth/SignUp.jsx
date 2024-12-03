@@ -43,7 +43,9 @@ const SignUp = ({ navigation }) => {
         createdAt: new Date().toISOString(),
       });
       await createUserWithEmailAndPassword(auth, email, password);
-      navigation.navigate('Home',{userId});
+
+      navigation.navigate('Home',{ userId});
+
     } catch (error) {
       Alert.alert('Error', error.message);
     }
