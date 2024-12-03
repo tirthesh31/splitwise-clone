@@ -41,6 +41,7 @@ const SignUp = ({ navigation }) => {
         lastName,
         email,
         createdAt: new Date().toISOString(),
+        numberOfGroupsAddedIn: 0
       });
       await createUserWithEmailAndPassword(auth, email, password);
       navigation.navigate('Home',{userId});
