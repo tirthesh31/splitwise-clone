@@ -1,12 +1,49 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Image, Switch,ScrollView } from 'react-native';
+import { database } from '../utils/firebase'; 
+import { ref, get } from 'firebase/database';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import styles from '../styles/ProfileScreen';
 
 const ProfileScreen = ({ route, navigation }) => {
-  const [email] = useState(route.params?.email || 'tirthesh@gmail.com');
+
+  const { userId } = route.params || {};
+  const [userData, setUserData] = useState(null); 
   const [darkMode, setDarkMode] = useState(false);
   const [notifications, setNotifications] = useState(true);
+
+
+  // Fetch user data from Firebase
+  useEffect(() => {
+    const fetchUserData = async () => {
+      try {
+        const userRef = ref(database, `users/${userId}`); 
+        const snapshot = await get(userRef); 
+        if (snapshot.exists()) {
+          setUserData(snapshot.val()); 
+        } else {
+          console.error('No user data found!');
+        }
+      } catch (error) {
+        console.error('Error fetching user data:', error);
+      }
+    };
+
+    if (userId) {
+      fetchUserData(); 
+    }
+  }, [userId]);
+
+  if (!userData) {
+   
+    return (
+      <View style={styles.loadingContainer}>
+        <Text>Loading user data...</Text>
+      </View>
+    );
+  }
+
+
 
   const profileOptions = [
     { 
@@ -46,15 +83,16 @@ const ProfileScreen = ({ route, navigation }) => {
       <View style={styles.profileContainer}>
         <View style={styles.profileImageContainer}>
           <Image 
-            source={{ uri: 'https://ui-avatars.com/api/?name=Tirthesh' }} 
+            source={{ uri: `https://ui-avatars.com/api/?name=${userData.firstName}` }} 
             style={styles.profileImage} 
           />
           <TouchableOpacity style={styles.editProfileButton}>
             <Icon name="camera-alt" size={16} color="#FFF" />
           </TouchableOpacity>
         </View>
-        <Text style={styles.userName}>Tirthesh</Text>
-        <Text style={styles.userEmail}>{email}</Text>
+        <Text style={styles.userName}>{userData.firstName}</Text>
+        <Text style={styles.userName}>{userData.lastName}</Text>
+        
       </View>
 
       <View style={styles.settingsSection}>

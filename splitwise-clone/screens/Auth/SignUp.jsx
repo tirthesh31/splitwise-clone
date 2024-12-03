@@ -44,7 +44,9 @@ const SignUp = ({ navigation }) => {
         numberOfGroupsAddedIn: 0
       });
       await createUserWithEmailAndPassword(auth, email, password);
-      navigation.navigate('Home',{userId});
+
+      navigation.navigate('Home',{ userId});
+
     } catch (error) {
       Alert.alert('Error', error.message);
     }
