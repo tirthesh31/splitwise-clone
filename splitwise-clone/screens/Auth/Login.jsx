@@ -16,6 +16,7 @@ import { auth } from '../../utils/firebase';
 import Colors from '../../utils/Colors';
 
 const Login = ({ navigation }) => {
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
@@ -28,10 +29,12 @@ const Login = ({ navigation }) => {
     try {
       // Authenticate user
       await signInWithEmailAndPassword(auth, email, password);
-      const userId = email.replace(/\./g, '_'); // Replace '.' in email for valid Firebase keys
-      // Navigate to Home with email and userId
-      navigation.navigate('Home', { email, userId });
-      
+  
+      const username = email.split('@')[0]; 
+      const userId = email.replace(/\./g, '_');
+
+      // Pass both username and email to Home
+      navigation.navigate('Home', { username, email, userId });
     } catch (error) {
       Alert.alert('Error', error.message);
     }
