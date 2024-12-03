@@ -1,38 +1,64 @@
-import React, { useState } from 'react';
-import { View, Text, FlatList, StyleSheet, TouchableOpacity, Animated } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, FlatList, TouchableOpacity, Animated } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { format, parseISO } from 'date-fns';
+import { getDatabase, ref, onValue } from 'firebase/database';
+import { getAuth } from 'firebase/auth';
 import styles from '../styles/ActivityScreen';
 import Colors from '../utils/Colors';
 
 const ActivityScreen = () => {
-  const [activities, setActivities] = useState([
-    {
-      id: '1',
-      type: 'expense',
-      group: 'Roommates',
-      amount: 500,
-      description: 'Grocery shopping',
-      date: '2024-02-15',
-    },
-    {
-      id: '2',
-      type: 'settlement',
-      group: 'Trip to Goa',
-      amount: 1200,
-      description: 'Settled with Rohan',
-      date: '2024-02-10',
-    },
-    {
-      id: '3',
-      type: 'invitation',
-      group: 'Family Trip',
-      description: 'Added to new group',
-      date: '2024-02-05',
-    }
-  ]);
+  const auth = getAuth();
+  const db = getDatabase();
+  const [activities, setActivities] = useState([]);
+  const [notifications, setNotifications] = useState([]);
+  const userId = auth.currentUser .uid;
 
-  const renderActivityItem = ({ item, index }) => {
+  useEffect(() => {
+    // Fetch notifications from Firebase
+    const notificationsRef = ref(db, `users/${userId}/activities`);
+    const unsubscribe = onValue(notificationsRef, (snapshot) => {
+      const data = snapshot.val();
+      const loadedNotifications = data
+        ? Object.keys(data).map((key) => ({
+            id: key,
+            ...data[key],
+          }))
+        : [];
+      setNotifications(loadedNotifications);
+    });
+
+    // Example static activities, to merge with notifications
+    setActivities([
+      {
+        id: '1',
+        type: 'expense',
+        group: 'Roommates',
+        amount: 500,
+        description: 'Grocery shopping',
+        date: '2024-02-15',
+      },
+      {
+        id: '2',
+        type: 'settlement',
+        group: 'Trip to Goa',
+        amount: 1200,
+        description: 'Settled with Rohan',
+        date: '2024-02-10',
+      },
+      {
+        id: '3',
+        type: 'invitation',
+        group: 'Family Trip',
+        description: 'Added to new group',
+        date: '2024-02-05',
+      }
+    ]);
+
+    return () => unsubscribe();
+  }, [userId]);
+
+  const renderActivityItem = ({ item }) => {
     const getActivityDetails = () => {
       switch(item.type) {
         case 'expense':
@@ -101,6 +127,13 @@ const ActivityScreen = () => {
     );
   };
 
+  const renderNotificationItem = ({ item }) => (
+    <View style={styles.notificationItem}>
+      <Text style={styles.notificationText}>{item.message}</Text>
+      <Text style={styles.notificationDate}>{new Date(item.date).toLocaleString()}</Text>
+    </View>
+  );
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -111,8 +144,10 @@ const ActivityScreen = () => {
       </View>
 
       <FlatList
-        data={activities}
-        renderItem={renderActivityItem}
+        data={activities.concat(notifications)} // Combine activities and notifications
+        renderItem={item => 
+          item.item.message ? renderNotificationItem(item) : renderActivityItem(item)
+        }
         keyExtractor={item => item.id}
         contentContainerStyle={styles.listContainer}
         showsVerticalScrollIndicator={false}
